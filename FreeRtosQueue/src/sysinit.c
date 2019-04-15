@@ -1,8 +1,8 @@
 /*
- * @brief FreeRTOS Blinky example
+ * @brief Common SystemInit function for LPC17xx/40xx chips
  *
  * @note
- * Copyright(C) NXP Semiconductors, 2014
+ * Copyright(C) NXP Semiconductors, 2013-14
  * All rights reserved.
  *
  * @par
@@ -29,10 +29,12 @@
  * this code.
  */
 
-#include "board.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "semphr.h"
+ #if defined(NO_BOARD_LIB)
+ #include "chip.h"
+ #else
+ #include "board.h"
+ #endif
+
 /*****************************************************************************
  * Private types/enumerations/variables
  ****************************************************************************/
@@ -41,106 +43,47 @@
  * Public types/enumerations/variables
  ****************************************************************************/
 
+#if defined(NO_BOARD_LIB)
+const uint32_t OscRateIn = 12000000;
+const uint32_t RTCOscRateIn = 32768;
+#endif
+
 /*****************************************************************************
  * Private functions
  ****************************************************************************/
-
-/* Sets up system hardware */
-static void prvSetupHardware(void)
-{
-	SystemCoreClockUpdate();
-	Board_Init();
-
-	/* Initial LED0 state is off */
-	Board_LED_Set(0, false);
-	Board_LED_Set(0, true);
-	Board_LED_Set(1, false);
-	Board_LED_Set(1, true);
-	Board_LED_Set(2, false);
-	Board_LED_Set(2, true);
-}
- xSemaphoreHandle xMutex = 0;
-
-/* LED1 toggle thread */
-static void vLEDTask1(void *pvParameters) {
-//ool LedState = fal
-	while (1) {
-
-		xSemaphoreTake(xMutex,portMAX_DELAY);
-		Board_LED_Set(0, false);
-		vTaskDelay(configTICK_RATE_HZ / 2.3);
-		Board_LED_Set(0, true);
-		xSemaphoreGive(xMutex);
-
-	}
-}
-
-/* LED2 toggle thread */
-static void vLEDTask2(void *pvParameters) {
-
-	while (1)
-	{
-	xSemaphoreTake(xMutex,portMAX_DELAY);
-		Board_LED_Set(1, false);
-		vTaskDelay(configTICK_RATE_HZ / 2.3);
-		Board_LED_Set(1, true);
-	xSemaphoreGive(xMutex);
-
-	}
-}
-
-/* LED3 toggle thread */
-static void vLEDTask3(void *pvParameters)
-{
-
-	while (1)
-	{
-
-		xSemaphoreTake(xMutex,portMAX_DELAY);
-		Board_LED_Set(2,false);
-		vTaskDelay(configTICK_RATE_HZ / 2.3);
-		Board_LED_Set(2,true);
-		xSemaphoreGive(xMutex);
-
-	}
-}
 
 /*****************************************************************************
  * Public functions
  ****************************************************************************/
 
-/**
- * @brief	main routine for FreeRTOS blinky example
- * @return	Nothing, function should not exit
- */
-int main(void)
+/* Set up and initialize hardware prior to call to main */
+void SystemInit(void)
 {
-	xMutex = xSemaphoreCreateMutex();
-	prvSetupHardware();
+	unsigned int *pSCB_VTOR = (unsigned int *) 0xE000ED08;
 
-	/* LED1 toggle thread */
-	xTaskCreate(vLEDTask1, (signed char *) "vTaskLed1",
-				configMINIMAL_STACK_SIZE, NULL, (tskIDLE_PRIORITY + 1UL),
-				(xTaskHandle *) NULL);
+#if defined(__IAR_SYSTEMS_ICC__)
+	extern void *__vector_table;
 
-	/* LED2 toggle thread */
-	xTaskCreate(vLEDTask2, (signed char *) "vTaskLed2",
-				configMINIMAL_STACK_SIZE, NULL, (tskIDLE_PRIORITY + 1UL),
-				(xTaskHandle *) NULL);
+	*pSCB_VTOR = (unsigned int) &__vector_table;
+#elif defined(__CODE_RED)
+	extern void *g_pfnVectors;
 
-	/* LED3 toggle thread */
-		xTaskCreate(vLEDTask3, (signed char *) "vTaskLed2",
-					configMINIMAL_STACK_SIZE, NULL, (tskIDLE_PRIORITY + 1UL),
-					(xTaskHandle *) NULL);
+	*pSCB_VTOR = (unsigned int) &g_pfnVectors;
+#elif defined(__ARMCC_VERSION)
+	extern void *__Vectors;
 
+	*pSCB_VTOR = (unsigned int) &__Vectors;
+#endif
 
-	/* Start the scheduler */
-	vTaskStartScheduler();
+#if defined(__FPU_PRESENT) && __FPU_PRESENT == 1
+	fpuInit();
+#endif
 
-	/* Should never arrive here */
-	return 1;
+#if defined(NO_BOARD_LIB)
+	/* Chip specific SystemInit */
+	Chip_SystemInit();
+#else
+	/* Setup system clocking and muxing */
+	Board_SystemInit();
+#endif
 }
-
-/**
- * @}
- */
